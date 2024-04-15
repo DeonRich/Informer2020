@@ -107,15 +107,20 @@ class Exp_Informer(Exp_Basic):
         return model_optim
     
     def _select_criterion(self):
-        criterion =  nn.MSELoss()
+        if self.args.features == 'MC':
+            print("using binary loss"):
+            criterion = nn.BCELoss()
+        else:
+            print("using MSE loss")
+            criterion =  nn.MSELoss()
         return criterion
 
     def vali(self, vali_data, vali_loader, criterion):
         self.model.eval()
         total_loss = []
-        for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(vali_loader):
+        for i, (batch_x,batch_y,batch_pred,batch_x_mark,batch_y_mark) in enumerate(vali_loader):
             pred, true = self._process_one_batch(
-                vali_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+                vali_data, batch_x, batch_y, batch_pred, batch_x_mark, batch_y_mark)
             loss = criterion(pred.detach().cpu(), true.detach().cpu())
             total_loss.append(loss)
         total_loss = np.average(total_loss)
@@ -148,12 +153,12 @@ class Exp_Informer(Exp_Basic):
             
             self.model.train()
             epoch_time = time.time()
-            for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(train_loader):
+            for i, (batch_x,batch_y,batch_pred,batch_x_mark,batch_y_mark) in enumerate(train_loader):
                 iter_count += 1
                 
                 model_optim.zero_grad()
                 pred, true = self._process_one_batch(
-                    train_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+                    train_data, batch_x, batch_y, batch_pred, batch_x_mark, batch_y_mark)
                 loss = criterion(pred, true)
                 train_loss.append(loss.item())
                 
@@ -200,9 +205,9 @@ class Exp_Informer(Exp_Basic):
         preds = []
         trues = []
         
-        for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(test_loader):
+        for i, (batch_x,batch_y,batch_pred,batch_x_mark,batch_y_mark) in enumerate(test_loader):
             pred, true = self._process_one_batch(
-                test_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+                test_data, batch_x, batch_y, batch_pred, batch_x_mark, batch_y_mark)
             preds.append(pred.detach().cpu().numpy())
             trues.append(true.detach().cpu().numpy())
 
@@ -239,7 +244,7 @@ class Exp_Informer(Exp_Basic):
         
         preds = []
         
-        for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(pred_loader):
+        for i, (batch_x,batch_y,batch_pred,batch_x_mark,batch_y_mark) in enumerate(pred_loader):
             pred, true = self._process_one_batch(
                 pred_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
             preds.append(pred.detach().cpu().numpy())
@@ -256,19 +261,17 @@ class Exp_Informer(Exp_Basic):
         
         return
 
-    def _process_one_batch(self, dataset_object, batch_x, batch_y, batch_x_mark, batch_y_mark):
+    def _process_one_batch(self, dataset_object, batch_x, batch_y, batch_pred, batch_x_mark, batch_y_mark):
         batch_x = batch_x.float().to(self.device)
         batch_y = batch_y.float()
+        batch_pred = batch_pred.float()
 
         batch_x_mark = batch_x_mark.float().to(self.device)
         batch_y_mark = batch_y_mark.float().to(self.device)
 
         # decoder input
-        if self.args.padding==0:
-            dec_inp = torch.zeros([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
-        elif self.args.padding==1:
-            dec_inp = torch.ones([batch_y.shape[0], self.args.pred_len, batch_y.shape[-1]]).float()
-        dec_inp = torch.cat([batch_y[:,:self.args.label_len,:], dec_inp], dim=1).float().to(self.device)
+
+        dec_inp = batch_y.to(self.device)
         # encoder - decoder
         if self.args.use_amp:
             with torch.cuda.amp.autocast():
@@ -284,6 +287,6 @@ class Exp_Informer(Exp_Basic):
         if self.args.inverse:
             outputs = dataset_object.inverse_transform(outputs)
         f_dim = -1 if self.args.features=='MS' else 0
-        batch_y = batch_y[:,-self.args.pred_len:,f_dim:].to(self.device)
+        batch_y = batch_pred[:,-self.args.pred_len:,f_dim:].to(self.device)
 
         return outputs, batch_y

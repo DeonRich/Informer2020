@@ -237,12 +237,18 @@ class Dataset_Custom(Dataset):
         border2s = [num_train, num_train+num_vali, len(df_raw)]
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
+        assert(self.features == 'MC')
         
         if self.features=='M' or self.features=='MS':
             cols_data = df_raw.columns[1:]
             df_data = df_raw[cols_data]
         elif self.features=='S':
             df_data = df_raw[[self.target]]
+        elif self.features == 'MC':
+            cols_data = df_raw.columns[1:-2]
+            df_data = df_raw[cols_data]
+            cols_pred = df_raw.columns[-2:]
+            self.data_pred = df_raw[cols_data][border1:border2]
 
         if self.scale:
             train_data = df_data[border1s[0]:border2s[0]]
@@ -272,11 +278,12 @@ class Dataset_Custom(Dataset):
         if self.inverse:
             seq_y = np.concatenate([self.data_x[r_begin:r_begin+self.label_len], self.data_y[r_begin+self.label_len:r_end]], 0)
         else:
-            seq_y = self.data_y[r_begin:r_end]
+            seq_y = self.data_y[r_begin:s_end]
+        seq_pred = self.data_pred[s_end: s_end + self.pred_len]
         seq_x_mark = self.data_stamp[s_begin:s_end]
         seq_y_mark = self.data_stamp[r_begin:r_end]
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark
+        return seq_x, seq_y, seq_pred, seq_x_mark, seq_y_mark
     
     def __len__(self):
         return len(self.data_x) - self.seq_len- self.pred_len + 1
